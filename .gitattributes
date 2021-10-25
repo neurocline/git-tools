@@ -1,0 +1,9 @@
+# .gitattributes
+# Bite the bullet and make all text files end in LF
+# (this overrides core.autocrlf=true)
+* text eol=lf
+
+# Go source files always have LF line endings
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf
