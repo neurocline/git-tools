@@ -27,6 +27,10 @@ def run(cfg):
         branch = cfg[section]['main']
         add_repo(monorepo_path, source, subtree, branch)
 
+    # At the end, do a git gc to make a single pak
+    print(f"Running git gc on {monorepo_path}")
+    output = run_git([monorepo_path, "gc", "--aggressive"])
+
 def create_monorepo(gitpath):
     import os.path
 
