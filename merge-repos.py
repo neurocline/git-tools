@@ -43,10 +43,15 @@ def add_repo(monorepo, source, subtree, branch):
 
     print(f"Adding {source}:{branch} to {monorepo} as {subtree}:main")
 
-    temp_repo_name = f"a-{os.path.basename(source)}"
+    source_name = os.path.basename(source)
+
+    temp_repo_name = f"a-{source_name}"
     temp_repo_dir = os.path.join(os.path.dirname(source), temp_repo_name).replace("\\", "/")
     if os.path.exists(temp_repo_dir):
         raise RuntimeError(f"Directory in the way for {temp_repo_dir}")
+
+    # make a friendly remote name
+    remote = subtree.replace("/", "_")
 
     print(f"  Cloning {source} into temp repo {temp_repo_dir}")
     output = run_git([".", "clone", "--no-local", source, temp_repo_dir])
@@ -54,16 +59,16 @@ def add_repo(monorepo, source, subtree, branch):
     print(f"  filter-repo: moving {temp_repo_name} to {temp_repo_name}/{subtree}")
     output = run_git([temp_repo_dir, "filter-repo", "--to-subdirectory-filter", subtree, "--tag-rename", f":{subtree}-"])
 
-    print(f"  Adding {temp_repo_name}/{subtree} to {monorepo}")
-    output = run_git([monorepo, "remote", "add", "-f", subtree, f"../{temp_repo_name}"])
-    print(f"  Adding branch orig/{subtree}/{branch} to {monorepo}")
-    output = run_git([monorepo, "branch", f"orig/{subtree}/{branch}", f"{subtree}/{branch}"])
+    print(f"  Adding {temp_repo_dir} to {monorepo} as remotes/{remote}")
+    output = run_git([monorepo, "remote", "add", "-f", remote, f"../{temp_repo_name}"])
+    print(f"  Adding branch orig/{source_name}/{branch} to {monorepo}")
+    output = run_git([monorepo, "branch", f"orig/{source_name}/{branch}", f"remotes/{remote}/{branch}"])
 
-    print(f"  Merging orig/{subtree}/{branch} to {monorepo}:main")
-    output = run_git([monorepo, "merge", "--allow-unrelated-histories", "--no-ff", f"orig/{subtree}/{branch}"])
+    print(f"  Merging orig/{source_name}/{branch} to {monorepo}:main")
+    output = run_git([monorepo, "merge", "--allow-unrelated-histories", "--no-ff", f"orig/{source_name}/{branch}"])
 
-    print(f"  Removing remote {subtree} from {monorepo}")
-    output = run_git([monorepo, "remote", "remove", subtree])
+    print(f"  Removing remote {remote} from {monorepo}")
+    output = run_git([monorepo, "remote", "remove", remote])
     print(f"  Removing temp repo {temp_repo_dir}")
     shutil.rmtree(temp_repo_dir, ignore_errors=False, onerror=rmtree_noaccess)
 
