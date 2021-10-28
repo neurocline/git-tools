@@ -22,6 +22,9 @@ def run(cfg):
     for section in cfg.sections():
         if section == "core":
             continue
+        if cfg.has_option(section, 'enabled') and cfg.getboolean(section, 'enabled') is False:
+            print(f"Skipping {section} because it is not enabled")
+            continue
         source = cfg[section]['source']
         subtree = cfg[section]['subtree']
         branch = cfg[section]['main']
@@ -44,6 +47,7 @@ def create_monorepo(gitpath):
 def add_repo(monorepo, source, subtree, branch):
     import os.path
     import shutil
+    import sys
 
     print(f"Adding {source}:{branch} to {monorepo} as {subtree}:main")
 
@@ -68,8 +72,16 @@ def add_repo(monorepo, source, subtree, branch):
     print(f"  Adding branch orig/{source_name}/{branch} to {monorepo}")
     output = run_git([monorepo, "branch", f"orig/{source_name}/{branch}", f"remotes/{remote}/{branch}"])
 
-    print(f"  Merging orig/{source_name}/{branch} to {monorepo}:main")
-    output = run_git([monorepo, "merge", "--allow-unrelated-histories", "--no-ff", f"orig/{source_name}/{branch}"])
+    REBASE = 1
+    if REBASE:
+        print(f"  Rebasing orig/{source_name}/{branch} on top of {monorepo}:main")
+        output = run_git([monorepo, "rebase", "--force-rebase", "--committer-date-is-author-date", "main", f"orig/{source_name}/{branch}"])
+        output = run_git([monorepo, "checkout", "main"])
+        print(f"  Fast-forwarding {monorepo}:main")
+        output = run_git([monorepo, "merge", "--ff-only", f"orig/{source_name}/{branch}"])
+    else:
+        print(f"  Merging orig/{source_name}/{branch} to {monorepo}:main")
+        output = run_git([monorepo, "merge", "--allow-unrelated-histories", "--no-ff", f"orig/{source_name}/{branch}"])
 
     print(f"  Removing remote {remote} from {monorepo}")
     output = run_git([monorepo, "remote", "remove", remote])
