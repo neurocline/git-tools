@@ -16,19 +16,26 @@ def generate(info):
         print(f"[repo.{entry['subtree']}]")
         print(f"source = {entry['source']}")
         print(f"subtree = {entry['subtree']}")
-        print(f"main = {entry['branches'][0]}")
+        print(f"main = {entry['main-branch']}")
         print(f"commits = {entry['commits']}")
 
         # Use the pattern ", " to separate items in a list, because space is not
         # allowed in tags, refnames (branches and remotes) or URLS (remote URLS)
-        if len(entry['branches']) > 0:
+
+        # We only need to show branches if we have more than one (singleton branches
+        # are already recorded in 'main')
+        if len(entry['branches']) > 1:
             print(f"branches = \"{', '.join(entry['branches'])}\"")
+
         if len(entry['tags']) > 0:
             print(f"tags = \"{', '.join(entry['tags'])}\"")
         if len(entry['remotes']) > 0:
             print(f"remotes = \"{', '.join(entry['remotes'])}\"")
         if len(entry['worktrees']) > 0:
             print(f"worktrees = \"{', '.join(entry['worktrees'])}\"")
+
+        # We only need to show roots if we have more than one (a singleton root will
+        # be contained in the main branch, by definition)
         if len(entry['roots']) > 1:
             print(f"roots = \"{', '.join(entry['roots'])}\"")
 
@@ -47,121 +54,56 @@ def gather(root):
                     info.append(item)
                     print(".", end="", file=sys.stderr, flush=True)
                 else:
-                    print(f"\nSkipping {entry.name}", file=sys.stderr)
+                    print(f"\nSkipping {entry.name}", file=sys.stderr, flush=True)
 
+    print(file=sys.stderr, flush=True)
     return info
 
 def gather_repo(gitpath):
     import os.path
     import sys
 
-    branches = get_git_branches(gitpath)
-    if branches is None:
-        print(f"Error (branches): {gitpath}", file=sys.stderr)
-        return None
-    tags = get_git_tags(gitpath)
-    remotes = get_git_remotes(gitpath)
-    num_commits = get_git_num_commits(gitpath)
-    worktrees = get_git_worktrees(gitpath)
-    roots = get_git_roots(gitpath)
-
-    if tags is None or remotes is None or num_commits is None:
-        print(f"Error (other): {gitpath}", file=sys.stderr)
+    import gitlib
+    repo = gitlib.Git(gitpath)
+    if not repo.is_worktree:
+        print(f"Error, not worktree: {gitpath}", file=sys.stderr)
         return None
 
+    branches = repo.branches()
+    tags = repo.tags()
+    remotes = repo.remotes()
+    num_commits = repo.num_commits()
+    worktrees = repo.worktrees()
+    roots = repo.roots()
+
+    # We will put things into a subtree that's based on the repo name
+    # TBD sanitize this
     subtree = os.path.basename(gitpath)
+
+    # Figure out what we want to call the main branch
+    # - if we have "main", use it
+    # - if we have "master", use it as main
+    # - otherwise, use the first branch
+    main_branch = None
+    if 'main' in branches:
+        main_branch = 'main'
+    elif 'master' in branches:
+        main_branch = 'master'
+    else:
+        main_branch = branches[0]
 
     item = {
         'source': gitpath,
         'subtree': subtree,
+        'main-branch': main_branch,
         'branches': branches,
         'tags': tags,
         'remotes': remotes,
-        'commits': num_commits[0],
+        'commits': num_commits,
         'worktrees': worktrees,
         'roots': roots
     }
     return item
-
-def get_git_branches(gitpath):
-    output = run_get([gitpath, "branch", "--list"])
-    if output is None:
-        return None
-    branches = []
-    for line in output:
-        branches.append(line[2:])
-    return branches
-
-def get_git_tags(gitpath):
-    return run_get([gitpath, "tag", "--list"])
-
-def get_git_remotes(gitpath):
-    output = run_get([gitpath, "remote"])
-
-    remotes = []
-    for remote_name in output:
-        remote = run_get([gitpath, "remote", "get-url", remote_name])
-        if remote is not None:
-            remotes.append(f"{remote_name}={remote[0]}")
-    return remotes
-
-def get_git_num_commits(gitpath):
-    return run_get([gitpath, "rev-list", "--all", "--count"])
-
-def get_git_worktrees(gitpath):
-    import re
-    import os.path
-
-    # Don't bother to return the built-in worktree. And note that it's atypical for someone
-    # to have worktrees. We'd like to know, because it's easy to lose track of them.
-    output = run_get([gitpath, "worktree", "list"])
-    re_worktree = re.compile(r'(.+) ([a-fA-F0-9]{7,}) \[([^]]+)\]( prunable)?')
-
-    worktrees = []
-    for line in output:
-        m = re_worktree.fullmatch(line)
-        if m is None:
-            raise RuntimeError(f"failed to match: {output}")
-        worktree_path = m.group(1).rstrip()
-        worktree_hash = m.group(2)
-        worktree_branch = m.group(3)
-        if worktree_path.lower() == os.path.abspath(gitpath).lower().replace("\\", "/"):
-            # print(f"Skipping {worktree_path} because this is {gitpath}")
-            pass
-        else:
-            worktrees.append(f"{worktree_branch}:{worktree_hash}:{worktree_path}")
-    return worktrees
-
-def get_git_roots(gitpath):
-    roots = []
-    output = run_get([gitpath, "rev-list", "--all", "--max-parents=0"])
-    for hash in output:
-        branches = []
-        output_branches = run_get([gitpath, "branch", "--contains", hash])
-        if len(output_branches) > 0:
-            for line in output_branches:
-                branches.append(line[2:])
-        else:
-            # we have no local branches, so look for remote branches owning this root
-            output_branches = run_get([gitpath, "branch", "-r", "--contains", hash])
-            for line in output_branches:
-                branches.append(line[2:])
-        roots.append(f"{hash}:{' '.join(branches)}")
-    return roots
-
-def run_get(cmd):
-    import subprocess
-    # import sys
-
-    cmd.insert(0, "git")
-    cmd.insert(1, "-C")
-    # print(cmd, end="", file=sys.stderr, flush=True)
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    # print("  done", file=sys.stderr, flush=True)
-    if result.returncode != 0:
-        return None
-
-    return result.stdout.splitlines()
 
 if __name__ == "__main__":
     main()
