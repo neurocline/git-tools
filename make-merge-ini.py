@@ -29,6 +29,8 @@ def generate(info):
             print(f"remotes = \"{', '.join(entry['remotes'])}\"")
         if len(entry['worktrees']) > 0:
             print(f"worktrees = \"{', '.join(entry['worktrees'])}\"")
+        if len(entry['roots']) > 1:
+            print(f"roots = \"{', '.join(entry['roots'])}\"")
 
 def gather(root):
     import os
@@ -61,6 +63,8 @@ def gather_repo(gitpath):
     remotes = get_git_remotes(gitpath)
     num_commits = get_git_num_commits(gitpath)
     worktrees = get_git_worktrees(gitpath)
+    roots = get_git_roots(gitpath)
+
     if tags is None or remotes is None or num_commits is None:
         print(f"Error (other): {gitpath}", file=sys.stderr)
         return None
@@ -74,7 +78,8 @@ def gather_repo(gitpath):
         'tags': tags,
         'remotes': remotes,
         'commits': num_commits[0],
-        'worktrees': worktrees
+        'worktrees': worktrees,
+        'roots': roots
     }
     return item
 
@@ -127,11 +132,32 @@ def get_git_worktrees(gitpath):
             worktrees.append(f"{worktree_branch}:{worktree_hash}:{worktree_path}")
     return worktrees
 
+def get_git_roots(gitpath):
+    roots = []
+    output = run_get([gitpath, "rev-list", "--all", "--max-parents=0"])
+    for hash in output:
+        branches = []
+        output_branches = run_get([gitpath, "branch", "--contains", hash])
+        if len(output_branches) > 0:
+            for line in output_branches:
+                branches.append(line[2:])
+        else:
+            # we have no local branches, so look for remote branches owning this root
+            output_branches = run_get([gitpath, "branch", "-r", "--contains", hash])
+            for line in output_branches:
+                branches.append(line[2:])
+        roots.append(f"{hash}:{' '.join(branches)}")
+    return roots
+
 def run_get(cmd):
     import subprocess
+    # import sys
+
     cmd.insert(0, "git")
     cmd.insert(1, "-C")
+    # print(cmd, end="", file=sys.stderr, flush=True)
     result = subprocess.run(cmd, capture_output=True, text=True)
+    # print("  done", file=sys.stderr, flush=True)
     if result.returncode != 0:
         return None
 
