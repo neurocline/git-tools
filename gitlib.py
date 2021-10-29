@@ -12,11 +12,20 @@ class Git:
         # test if we are inside a git worktree
         self.is_worktree = self.is_inside_worktree()
 
+        # if we are not inside a git worktree, maybe a bare repo?
+        self.is_bare_repo = False if self.is_worktree else self.is_bare_repository()
+
         # set up regex that we might need
         self.re_worktree = re.compile(r'(.+) ([a-fA-F0-9]{7,}) \[([^]]+)\]( prunable)?')
 
     def is_inside_worktree(self):
         output = self.run_git_cmd(["rev-parse", "--is-inside-work-tree"])
+        if output is None:
+            return False
+        return output[0] == 'true'
+
+    def is_bare_repository(self):
+        output = self.run_git_cmd(["rev-parse", "--is-bare-repository"])
         if output is None:
             return False
         return output[0] == 'true'
