@@ -122,6 +122,20 @@ class Git:
                         hooks_report.append(f"Hook {f}")
         return hooks_report
 
+    def read_gitignore(self):
+        import os.path
+
+        # TBD look for all the .gitignore files in the tree
+        root_gitignore_path = os.path.join(self.gitdir, ".gitignore")
+        if not os.path.exists(root_gitignore_path):
+            return None
+
+        gitignore_data = []
+        with open(root_gitignore_path, "r", encoding="utf-8") as f:
+            for line in f:
+                gitignore_data.append(line.strip())
+        return gitignore_data
+
     def remotes(self):
         output = self.run_git_cmd(["remote"])
 
@@ -150,6 +164,14 @@ class Git:
                     branches.append(line[2:])
             roots_report.append(f"{hash}:{' '.join(branches)}")
         return roots_report
+
+    def submodules(self):
+        # Note - this returns an error if submodules exist but aren't initialized. We
+        # need to capture this error
+        output = self.run_git_cmd(['submodule'])
+        if self.returncode != 0:
+            return self.last_stderr
+        return output
 
     def tags(self):
         return self.run_git_cmd(["tag", "--list"])
@@ -195,6 +217,12 @@ class Git:
 
     # --------------------------------------------------------------------------------------------
 
+    def get_gitdir_path(self, sub_path):
+        if self.is_bare_repo:
+            return os.path.join(self.gitdir, sub_path)
+        else:
+            return os.path.join(self.gitdir, ".git", sub_path)
+
     def run_git_cmd(self, cmd):
         import subprocess
         import sys
@@ -211,11 +239,11 @@ class Git:
         if VERBOSE:
             print("  done", file=sys.stderr, flush=True)
 
-        self.last_stderr = result.stderr
-        self.last_stdout = result.stdout
+        self.last_stderr = result.stderr.splitlines()
+        self.last_stdout = result.stdout.splitlines()
         self.returncode = result.returncode
 
         if self.returncode != 0:
             return None
 
-        return self.last_stdout.splitlines()
+        return self.last_stdout

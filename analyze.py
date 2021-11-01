@@ -135,6 +135,14 @@ def analyze(repo):
         if len(worktrees) > 0:
             print(f"worktrees = \"{', '.join(worktrees)}\"")
 
+    # Apparently we can only issue "git submodule" calls in working trees. Even though
+    # bare git trees can have submodules, they can't really be used, because most of the
+    # point of a submodule is to fetch files into the worktree
+    if repo.is_worktree:
+        submodules = repo.submodules()
+        if submodules is not None and len(submodules) > 0:
+            print(f"submodules = \"{', '.join(submodules)}\"")
+
     roots = repo.roots()
     print(f"roots = \"{', '.join(roots)}\"")
 
@@ -154,6 +162,12 @@ def analyze(repo):
         unmerged = repo.unmerged()
         if len(unmerged) > 0:
             print(f"unmerged = {len(unmerged)} commits")
+
+    # See if we have a .gitignore at the root of the repo
+    gitignore_data = repo.read_gitignore()
+    if gitignore_data is not None:
+        flat_gitignore = '\\n'.join(gitignore_data)
+        print(f"gitignore = \"{flat_gitignore}\"")
 
     print(flush=True)
 
