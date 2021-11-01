@@ -169,6 +169,11 @@ def analyze(repo):
         flat_gitignore = '\\n'.join(gitignore_data)
         print(f"gitignore = \"{flat_gitignore}\"")
 
+    # Show local commits not pushed to tracking branches
+    unpushed = repo.unpushed()
+    if len(unpushed) > 0:
+        print(f"unpushed = {len(unpushed[0])} branches with {len(unpushed[1])} commits")
+
     print(flush=True)
 
 if __name__ == "__main__":

@@ -189,6 +189,16 @@ class Git:
         output = self.run_git_cmd(["log", "--all", "--format=format:%H", "--not", self.main_branch])
         return output
 
+    def unpushed(self):
+        # Find branches with unpushed work
+        branches = self.run_git_cmd(["log", "--branches", "--not", "--remotes", "--simplify-by-decoration", "--oneline"])
+        if len(branches) == 0:
+            return []
+
+        # Get all unpushed commits
+        commits = self.run_git_cmd(["log", "--branches", "--not", "--remotes", "--oneline"])
+        return [branches, commits]
+
     def worktrees(self):
         import re
         import os.path
