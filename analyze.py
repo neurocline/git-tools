@@ -82,16 +82,44 @@ def analyze(repo):
     repo_count += 1
     print(f"[repo-{repo_count}]")
 
-    if repo.is_worktree:
-        print(f"repo = {repo.gitdir}")
-    elif repo.is_bare_repo:
-        print(f"bare repo = {repo.gitdir}")
+    print(f"repo = {repo.gitdir}")
+    if repo.is_bare_repo:
+        print(f"bare = true")
 
     num_commits = repo.num_commits()
     print(f"commits = {num_commits}")
 
+    # we can't get the last commit date if there are no commits
+    if num_commits > 0:
+        last_commit_date = repo.last_commit_date()
+        print(f"last-commit = {last_commit_date}")
+
+    object_stats = repo.count_objects()
+    num_loose = object_stats.get('count', 0)
+    if num_loose > 0:
+        print(f"loose = {num_loose} ({object_stats.get('size', 0)} KB)")
+    num_garbage = object_stats.get('garbage', 0)
+    if num_garbage > 0:
+        print(f"garbage = {num_garbage} ({object_stats.get('size-garbage', 0)} KB)")
+    num_packs = object_stats.get('packs', 0)
+    if num_packs > 0:
+        print(f"packs = {num_packs}/{object_stats.get('in-pack', 0)} ({object_stats.get('size-pack', 0)} KB)")
+
     branches = repo.branches()
     print(f"branches = \"{', '.join(branches)}\"")
+
+    # Figure out what we want to call the main branch
+    # - if we have "main", use it
+    # - if we have "master", use it as main
+    # - otherwise, use the first branch
+    repo.main_branch = None
+    if len(branches) > 0:
+        if 'main' in branches:
+            repo.main_branch = 'main'
+        elif 'master' in branches:
+            repo.main_branch = 'master'
+        else:
+            repo.main_branch = branches[0]
 
     tags = repo.tags()
     if len(tags) > 0:
@@ -109,6 +137,23 @@ def analyze(repo):
 
     roots = repo.roots()
     print(f"roots = \"{', '.join(roots)}\"")
+
+    hooks = repo.hooks()
+    if len(hooks) > 0:
+        print(f"hooks = \"{', '.join(hooks)}\"")
+
+    # show uncommitted files (TBD to show ignores as well)
+    # We can only do this on worktrees (TBD to do it on all worktrees)
+    if repo.is_worktree:
+        uncommitted = repo.uncommitted()
+        if len(uncommitted) > 0:
+            print(f"uncommitted = \"{', '.join(uncommitted)}\"")
+
+    # show refs not merged to main
+    if repo.main_branch is not None:
+        unmerged = repo.unmerged()
+        if len(unmerged) > 0:
+            print(f"unmerged = {len(unmerged)} commits")
 
     print(flush=True)
 
