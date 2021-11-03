@@ -1,6 +1,8 @@
 # analyze.py
 # - find git repos and analyze them
 
+SHOW_GIT_IGNORE = 0
+
 def main():
     import sys
     start_path = "."
@@ -158,21 +160,25 @@ def analyze(repo):
             print(f"uncommitted = \"{', '.join(uncommitted)}\"")
 
     # show refs not merged to main
-    if repo.main_branch is not None:
+    # (very little point on doing this for bare repos)
+    if repo.main_branch is not None and not repo.is_bare_repo:
         unmerged = repo.unmerged()
         if len(unmerged) > 0:
             print(f"unmerged = {len(unmerged)} commits")
 
     # See if we have a .gitignore at the root of the repo
-    gitignore_data = repo.read_gitignore()
-    if gitignore_data is not None:
-        flat_gitignore = '\\n'.join(gitignore_data)
-        print(f"gitignore = \"{flat_gitignore}\"")
+    if SHOW_GIT_IGNORE:
+        gitignore_data = repo.read_gitignore()
+        if gitignore_data is not None:
+            flat_gitignore = '\\n'.join(gitignore_data)
+            print(f"gitignore = \"{flat_gitignore}\"")
 
     # Show local commits not pushed to tracking branches
-    unpushed = repo.unpushed()
-    if len(unpushed) > 0:
-        print(f"unpushed = {len(unpushed[0])} branches with {len(unpushed[1])} commits")
+    # (no point on doing this for bare repositories)
+    if not repo.is_bare_repo:
+        unpushed = repo.unpushed()
+        if len(unpushed) > 0:
+            print(f"unpushed = {len(unpushed[0])} branches with {len(unpushed[1])} commits")
 
     print(flush=True)
 
