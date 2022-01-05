@@ -3,6 +3,8 @@
 
 VERBOSE = 0
 
+git_exe = None  # cached git executable path (speeds up repeated calls on Windows)
+
 class Git:
     def __init__(self, gitdir=None):
         import re
@@ -136,6 +138,9 @@ class Git:
                 gitignore_data.append(line.strip())
         return gitignore_data
 
+    def refs(self):
+        return self.run_git_cmd(["show-ref", "--head"])
+
     def remotes(self):
         output = self.run_git_cmd(["remote"])
 
@@ -152,18 +157,33 @@ class Git:
         roots_report = []
         output = self.run_git_cmd(["rev-list", "--all", "--max-parents=0"])
         for hash in output:
-            branches = []
-            output_branches = self.run_git_cmd(["branch", "--contains", hash])
-            if len(output_branches) > 0:
-                for line in output_branches:
-                    branches.append(line[2:])
-            else:
+
+            # Find local branches that contain the root
+            branches = [ref[2:] for ref in self.run_git_cmd(["branch", "--contains", hash])]
+            #branches = []
+            #output_branches = self.run_git_cmd(["branch", "--contains", hash])
+            #if len(output_branches) > 0:
+            #    for line in output_branches:
+            #        branches.append(line[2:])
+
+            # Or, look for remote branches containing the root
+            if len(branches) == 0:
+                branches = [ref for ref in self.run_git_cmd(["branch", "-r", "--contains", hash])]
                 # we have no local branches, so look for remote branches owning this root
-                output_branches = self.run_git_cmd(["branch", "-r", "--contains", hash])
-                for line in output_branches:
-                    branches.append(line[2:])
+                #output_branches = self.run_git_cmd(["branch", "-r", "--contains", hash])
+                #for line in output_branches:
+                #    branches.append(line[2:])
+
+            # Or, look for tags containing the root
+            if len(branches) == 0:
+                branches = [ref[2:] for ref in self.run_git_cmd(["tag", "--contains", hash])]
+                # branches.append("NONE")
+
             roots_report.append(f"{hash}:{' '.join(branches)}")
         return roots_report
+
+    def stashes(self):
+        return self.run_git_cmd(["stash", "list"])
 
     def submodules(self):
         # Note - this returns an error if submodules exist but aren't initialized. We
@@ -227,6 +247,23 @@ class Git:
 
     # --------------------------------------------------------------------------------------------
 
+    def signature(self):
+        import hashlib
+
+        # We are hashing both the ref hahes and the ref names, in the order returned
+        # by git show-ref. We should probably make sure it's in a canonical order and format
+        refs = self.refs()
+        stashes = self.stashes()
+        sha1 = hashlib.sha1()
+        for ref in refs:
+            sha1.update(ref.encode('utf-8'))
+        for stash in stashes:
+            sha1.update(stash.encode('utf-8'))
+
+        return sha1.hexdigest()
+
+    # --------------------------------------------------------------------------------------------
+
     def get_gitdir_path(self, sub_path):
         if self.is_bare_repo:
             return os.path.join(self.gitdir, sub_path)
@@ -237,8 +274,15 @@ class Git:
         import subprocess
         import sys
 
+        global git_exe
+        if git_exe is None:
+            import shutil
+            git_exe = shutil.which("git")
+            if git_exe is None:
+                raise RuntimeError("Could not find location of 'git' binary")
+
         git_cmd = cmd[:]
-        git_cmd.insert(0, "git")
+        git_cmd.insert(0, git_exe)
         if self.gitdir is not None:
             git_cmd.insert(1, "-C")
             git_cmd.insert(2, self.gitdir)

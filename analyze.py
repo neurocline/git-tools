@@ -52,11 +52,16 @@ def scan(base_path):
                 has_baredir |= CONFIG
 
         if has_gitdir is True or has_baredir == BAREDIR:
+            start_time = time.time()
             root_path = os.path.abspath(root).replace("\\", "/")
             # print(f"Checking potential Git repo at {root_path}")
             repo = gitlib.Git(root_path)
 
             analyze(repo)
+            delta_time = time.time() - start_time
+            print(f"elapsed = {delta_time:.3f}")
+
+            print(flush=True)
 
             # Don't iterate inside git directory
             dirs.clear()
@@ -71,6 +76,7 @@ repo_count = 0
 
 def analyze(repo):
     import sys
+    import time
 
     if repo.is_bare_repo:
         print(f"\rFound bare repo at {repo.gitdir}", file=sys.stderr, flush=True)
@@ -84,6 +90,13 @@ def analyze(repo):
     repo_count += 1
     print(f"[repo-{repo_count}]")
 
+    # Calculate repo signature (TBD: will use this to know if a repo has changed
+    # since the last time we looked at it).
+    start_time = time.time()
+    signature = repo.signature()
+    delta_time = time.time() - start_time
+    print(f"signature = {signature} ({delta_time:.3f})")
+
     print(f"repo = {repo.gitdir}")
     if repo.is_bare_repo:
         print(f"bare = true")
@@ -94,7 +107,7 @@ def analyze(repo):
     # we can't get the last commit date if there are no commits
     if num_commits > 0:
         last_commit_date = repo.last_commit_date()
-        print(f"last-commit = {last_commit_date}")
+        print(f"last_commit = {last_commit_date}")
 
     object_stats = repo.count_objects()
     num_loose = object_stats.get('count', 0)
@@ -166,13 +179,6 @@ def analyze(repo):
         if len(unmerged) > 0:
             print(f"unmerged = {len(unmerged)} commits")
 
-    # See if we have a .gitignore at the root of the repo
-    if SHOW_GIT_IGNORE:
-        gitignore_data = repo.read_gitignore()
-        if gitignore_data is not None:
-            flat_gitignore = '\\n'.join(gitignore_data)
-            print(f"gitignore = \"{flat_gitignore}\"")
-
     # Show local commits not pushed to tracking branches
     # (no point on doing this for bare repositories)
     if not repo.is_bare_repo:
@@ -180,7 +186,18 @@ def analyze(repo):
         if len(unpushed) > 0:
             print(f"unpushed = {len(unpushed[0])} branches with {len(unpushed[1])} commits")
 
-    print(flush=True)
+    # Show stashed commits (bare repos could have stashes, but won't, in reality)
+    stashes = repo.stashes()
+    if len(stashes) > 0:
+        flat_stashes = '\\n'.join(stashes)
+        print(f"stashes = \"{flat_stashes}\"")
+
+    # See if we have a .gitignore at the root of the repo
+    if SHOW_GIT_IGNORE:
+        gitignore_data = repo.read_gitignore()
+        if gitignore_data is not None:
+            flat_gitignore = '\\n'.join(gitignore_data)
+            print(f"gitignore = \"{flat_gitignore}\"")
 
 if __name__ == "__main__":
     main()
