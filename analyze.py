@@ -4,13 +4,22 @@
 SHOW_GIT_IGNORE = 0
 
 def main():
-    import sys
-    start_path = "."
-    if len(sys.argv) > 1:
-        start_path = sys.argv[1]
-    scan(start_path)
+    import argparse
 
-def scan(base_path):
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("path", nargs="?", default=None, help="path to scan for Git repos")
+    parser.add_argument('--verbose', action='store_true', help='verbose output')
+    parser.add_argument('--dirty-only', action= 'store_true', help='only show dirty repos')
+
+    args = parser.parse_args()
+
+    start_path = "."
+    if args.path is not None:
+        start_path = args.path
+    scan(start_path, args.verbose, args.dirty_only)
+
+def scan(base_path, verbose, dirty_only):
     import os
     import os.path
     import sys
@@ -57,11 +66,12 @@ def scan(base_path):
             # print(f"Checking potential Git repo at {root_path}")
             repo = gitlib.Git(root_path)
 
-            analyze(repo)
-            delta_time = time.time() - start_time
-            print(f"elapsed = {delta_time:.3f}")
+            did_work = analyze(repo, verbose, dirty_only)
+            if did_work:
+                delta_time = time.time() - start_time
+                print(f"elapsed = {delta_time:.3f}")
 
-            print(flush=True)
+                print(flush=True)
 
             # Don't iterate inside git directory
             dirs.clear()
@@ -74,9 +84,40 @@ def scan(base_path):
 
 repo_count = 0
 
-def analyze(repo):
+def analyze(repo, verbose, dirty_only):
     import sys
     import time
+
+    if not (repo.is_bare_repo or repo.is_worktree):
+        print(f"Something wrong, not a repo at {repo.gitdir}")
+        return
+
+    # Do all the work up front to see if this is a dirty repo, so that
+    # we can skip non-dirty repos if we have dirty_only set. Note that this
+    # isn't looking for stashes at the moment (probably should?)
+
+    # show uncommitted files (TBD to show ignores as well)
+    # We can only do this on worktrees (TBD to do it on all worktrees)
+    uncommitted = []
+    if repo.is_worktree:
+        uncommitted = repo.uncommitted()
+
+    # show refs not merged to main
+    # (very little point on doing this for bare repos)
+    unmerged = []
+    if repo.main_branch is not None and not repo.is_bare_repo:
+        unmerged = repo.unmerged()
+
+    # Show local commits not pushed to tracking branches
+    # (no point on doing this for bare repositories)
+    unpushed = []
+    if not repo.is_bare_repo:
+        unpushed = repo.unpushed()
+
+    # If we only want dirty repos, bail out now if this is not dirty
+    if dirty_only:
+        if len(uncommitted) == 0 and len(unmerged) == 0 and len(unpushed) == 0:
+            return
 
     if repo.is_bare_repo:
         print(f"\rFound bare repo at {repo.gitdir}", file=sys.stderr, flush=True)
@@ -93,9 +134,11 @@ def analyze(repo):
     # Calculate repo signature (TBD: will use this to know if a repo has changed
     # since the last time we looked at it).
     start_time = time.time()
-    signature = repo.signature()
+    if verbose:
+        signature = repo.signature()
     delta_time = time.time() - start_time
-    print(f"signature = {signature} ({delta_time:.3f})")
+    if verbose:
+        print(f"signature = {signature} ({delta_time:.3f})")
 
     print(f"repo = {repo.gitdir}")
     if repo.is_bare_repo:
@@ -198,6 +241,8 @@ def analyze(repo):
         if gitignore_data is not None:
             flat_gitignore = '\\n'.join(gitignore_data)
             print(f"gitignore = \"{flat_gitignore}\"")
+
+    return True
 
 if __name__ == "__main__":
     main()
