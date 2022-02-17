@@ -19,9 +19,11 @@ class Git:
 
         # set up regex that we might need
         self.re_worktree = re.compile(r'(.+) ([a-fA-F0-9]{7,}) \[([^]]+)\]( prunable)?')
+        self.re_ls_remote = re.compile(r'([a-fA-F0-9]+)\s+(.+)')
 
         # Some information we cache
         self.main_branch = None
+        self.remote_names = None
 
     def is_inside_worktree(self):
         output = self.run_git_cmd(["rev-parse", "--is-inside-work-tree"])
@@ -35,6 +37,20 @@ class Git:
             return False
         return output[0] == 'true'
 
+    # --------------------------------------------------------------------------------------------
+    # Cache information about the repository
+    # --------------------------------------------------------------------------------------------
+
+    def fetch_remotes(self):
+        if self.remote_names is None:
+            output = self.run_git_cmd(["remote"])
+            self.remote_names = []
+            for remote_name in output:
+                self.remote_names.append(remote_name)
+
+    # --------------------------------------------------------------------------------------------
+    # Report information about the repository
+    # At the moment, many of these fetch information and also create a report
     # --------------------------------------------------------------------------------------------
 
     def branches(self):
@@ -124,6 +140,27 @@ class Git:
                         hooks_report.append(f"Hook {f}")
         return hooks_report
 
+    def ls_remote(self):
+        import re
+
+        self.fetch_remotes()
+
+        # the output looks like this
+        # d43ea8b5cb8e70596f783171627ed66d06aec087        refs/heads/main
+
+        remote_refs = dict()
+        for remote_name in self.remote_names:
+            remote_refs[remote_name] = []
+            output = self.run_git_cmd(["ls-remote", remote_name])
+            for line in output:
+                m = self.re_ls_remote.fullmatch(line)
+                if m is None:
+                    raise RuntimeError(f"failed to match: {output}")
+                refhash = m.group(1)
+                refname = m.group(2)
+                remote_refs[remote_name].append([refhash, refname])
+        return remote_refs
+
     def read_gitignore(self):
         import os.path
 
@@ -142,10 +179,10 @@ class Git:
         return self.run_git_cmd(["show-ref", "--head"])
 
     def remotes(self):
-        output = self.run_git_cmd(["remote"])
+        self.fetch_remotes()
 
         remotes_report = []
-        for remote_name in output:
+        for remote_name in self.remote_names:
             remote = self.run_git_cmd(["remote", "get-url", remote_name])
             if remote is not None:
                 remotes_report.append(f"{remote_name}:{remote[0]}")
@@ -202,6 +239,40 @@ class Git:
         for line in output:
             uncommitted_report.append(line)
         return uncommitted_report
+
+    def unfetched(self):
+        # Get the local idea of remote refs
+        output = self.refs()
+        local_refs = dict()
+        for line in output:
+            m = self.re_ls_remote.fullmatch(line)
+            if m is None:
+                raise RuntimeError(f"failed to match: {output}")
+            refhash = m.group(1)
+            refname = m.group(2)
+            if refname == "HEAD" or refname.startswith("refs/heads"):
+                continue
+            local_refs[refname] = refhash
+            # print(f"local_refs[{refname}] = {refhash}")
+
+        # Get the upstream's idea of its refs, translated to the same pattern
+        # as the local names
+        upstream_refs = dict()
+        remote_refs = self.ls_remote()
+        for origin in remote_refs:
+            for refhash, refname in remote_refs[origin]:
+                if refname == "HEAD" or not refname.startswith("refs/heads"):
+                    continue
+                tip = refname[11:]
+                localname = f"refs/remotes/{origin}/{tip}"
+                upstream_refs[localname] = refhash
+                # print(f"upstream_refs[{localname}] = {refhash}")
+
+        unfetched_refs = []
+        for refname in upstream_refs:
+            if local_refs[refname] != upstream_refs[refname]:
+                unfetched_refs.append(f"{refname} local={local_refs[refname]} remote={upstream_refs[refname]}")
+        return unfetched_refs
 
     def unmerged(self):
         if self.main_branch is None:

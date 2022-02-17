@@ -9,17 +9,18 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("path", nargs="?", default=None, help="path to scan for Git repos")
-    parser.add_argument('--verbose', action='store_true', help='verbose output')
+    parser.add_argument('--verbose', '-v', action='store_true', help='verbose output')
     parser.add_argument('--dirty-only', action= 'store_true', help='only show dirty repos')
+    parser.add_argument('--check-upstream', action='store_true', help='check upstream repo status (slow)')
 
     args = parser.parse_args()
 
     start_path = "."
     if args.path is not None:
         start_path = args.path
-    scan(start_path, args.verbose, args.dirty_only)
+    scan(start_path, args.verbose, args.dirty_only, args.check_upstream)
 
-def scan(base_path, verbose, dirty_only):
+def scan(base_path, verbose, dirty_only, check_upstream):
     import os
     import os.path
     import sys
@@ -66,7 +67,7 @@ def scan(base_path, verbose, dirty_only):
             # print(f"Checking potential Git repo at {root_path}")
             repo = gitlib.Git(root_path)
 
-            did_work = analyze(repo, verbose, dirty_only)
+            did_work = analyze(repo, verbose, dirty_only, check_upstream)
             if did_work:
                 delta_time = time.time() - start_time
                 print(f"elapsed = {delta_time:.3f}")
@@ -84,7 +85,7 @@ def scan(base_path, verbose, dirty_only):
 
 repo_count = 0
 
-def analyze(repo, verbose, dirty_only):
+def analyze(repo, verbose, dirty_only, check_upstream):
     import sys
     import time
 
@@ -114,9 +115,15 @@ def analyze(repo, verbose, dirty_only):
     if not repo.is_bare_repo:
         unpushed = repo.unpushed()
 
+    # Show upstream refs not in sync with local remote refs
+    # (a proxy for unfetched commits)
+    unfetched = []
+    if repo.is_worktree and check_upstream:
+        unfetched = repo.unfetched()
+
     # If we only want dirty repos, bail out now if this is not dirty
     if dirty_only:
-        if len(uncommitted) == 0 and len(unmerged) == 0 and len(unpushed) == 0:
+        if len(uncommitted) == 0 and len(unmerged) == 0 and len(unpushed) == 0 and len(unfetched) == 0:
             return
 
     if repo.is_bare_repo:
@@ -152,16 +159,17 @@ def analyze(repo, verbose, dirty_only):
         last_commit_date = repo.last_commit_date()
         print(f"last_commit = {last_commit_date}")
 
-    object_stats = repo.count_objects()
-    num_loose = object_stats.get('count', 0)
-    if num_loose > 0:
-        print(f"loose = {num_loose} ({object_stats.get('size', 0)} KB)")
-    num_garbage = object_stats.get('garbage', 0)
-    if num_garbage > 0:
-        print(f"garbage = {num_garbage} ({object_stats.get('size-garbage', 0)} KB)")
-    num_packs = object_stats.get('packs', 0)
-    if num_packs > 0:
-        print(f"packs = {num_packs}/{object_stats.get('in-pack', 0)} ({object_stats.get('size-pack', 0)} KB)")
+    if verbose:
+        object_stats = repo.count_objects()
+        num_loose = object_stats.get('count', 0)
+        if num_loose > 0:
+            print(f"loose = {num_loose} ({object_stats.get('size', 0)} KB)")
+        num_garbage = object_stats.get('garbage', 0)
+        if num_garbage > 0:
+            print(f"garbage = {num_garbage} ({object_stats.get('size-garbage', 0)} KB)")
+        num_packs = object_stats.get('packs', 0)
+        if num_packs > 0:
+            print(f"packs = {num_packs}/{object_stats.get('in-pack', 0)} ({object_stats.get('size-pack', 0)} KB)")
 
     branches = repo.branches()
     print(f"branches = \"{', '.join(branches)}\"")
@@ -201,12 +209,20 @@ def analyze(repo, verbose, dirty_only):
         if submodules is not None and len(submodules) > 0:
             print(f"submodules = \"{', '.join(submodules)}\"")
 
-    roots = repo.roots()
-    print(f"roots = \"{', '.join(roots)}\"")
+    if verbose:
+        roots = repo.roots()
+        print(f"roots = \"{', '.join(roots)}\"")
 
     hooks = repo.hooks()
     if len(hooks) > 0:
         print(f"hooks = \"{', '.join(hooks)}\"")
+
+    # show unfetched refs (cases where local remotes are out of date with upstream)
+    # note: if we have unpushed, then we need to do extra work to figure out if
+    # we have unfetched as well, because that's a merge scenario, and we probably
+    # can't do that work without fetching.
+    if len(unfetched) > 0 and len(unpushed) == 0:
+        print(f"unfetched = \"{', '.join(unfetched)}\"")
 
     # show uncommitted files (TBD to show ignores as well)
     # We can only do this on worktrees (TBD to do it on all worktrees)
