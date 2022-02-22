@@ -152,6 +152,9 @@ class Git:
         for remote_name in self.remote_names:
             remote_refs[remote_name] = []
             output = self.run_git_cmd(["ls-remote", remote_name])
+            if output is None:
+                print(f"Got nothing from ls-remote {remote_name} for {self.gitdir}")
+                return remote_refs
             for line in output:
                 m = self.re_ls_remote.fullmatch(line)
                 if m is None:
@@ -270,6 +273,9 @@ class Git:
 
         unfetched_refs = []
         for refname in upstream_refs:
+            if refname not in local_refs:
+                print(f"found remote ref {refname} at {upstream_refs[refname]} with no matching local ref")
+                continue
             if local_refs[refname] != upstream_refs[refname]:
                 unfetched_refs.append(f"{refname} local={local_refs[refname]} remote={upstream_refs[refname]}")
         return unfetched_refs
@@ -368,7 +374,10 @@ class Git:
         self.last_stdout = result.stdout.splitlines()
         self.returncode = result.returncode
 
-        if self.returncode != 0:
+        if self.returncode != 0 or len(self.last_stderr) > 0:
+            print(f"{git_cmd} returned error={self.returncode}")
+            for line in self.last_stderr:
+                print(line)
             return None
 
         return self.last_stdout
