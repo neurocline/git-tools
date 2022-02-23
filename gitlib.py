@@ -274,7 +274,7 @@ class Git:
         unfetched_refs = []
         for refname in upstream_refs:
             if refname not in local_refs:
-                print(f"found remote ref {refname} at {upstream_refs[refname]} with no matching local ref")
+                # print(f"found remote ref {refname} at {upstream_refs[refname]} with no matching local ref")
                 continue
             if local_refs[refname] != upstream_refs[refname]:
                 unfetched_refs.append(f"{refname} local={local_refs[refname]} remote={upstream_refs[refname]}")
