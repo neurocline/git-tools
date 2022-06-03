@@ -1,0 +1,11 @@
+# Ignore everything
+*
+
+# But un-ignore directories
+!*/
+
+# Allow directory A
+!/A/**
+
+# Allow txt files
+!*.txt

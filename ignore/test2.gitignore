@@ -1,0 +1,11 @@
+# ignore everything
+/*
+
+# don't ignore A
+!/A/
+
+# ignore everything in A
+/A/*
+
+# don't ignore B
+!/A/B/
